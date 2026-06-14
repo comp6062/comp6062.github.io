@@ -1,1 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IPTV Search</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: url('https://youriptv.us/bg.jpg') no-repeat center center fixed;
+      background-size: cover;
+      position: relative;
+      color: #fff;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 0;
+    }
+    #search-container {
+      max-width: 720px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+    input {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+      background: rgba(255,255,255,0.9);
+      color: #000;
+    }
+    .result {
+      display: flex;
+      align-items: center;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-top: 8px;
+      padding: 10px;
+      color: #000;
+      cursor: pointer;
+    }
+    .result:hover {
+      background: rgba(230,230,230,0.9);
+    }
+    .flag, .badge {
+      width: 24px;
+      height: 24px;
+      margin-right: 10px;
+      object-fit: contain;
+      border-radius: 4px;
+      background: #fff;
+    }
+    .channel-name {
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    #pagination {
+      text-align: center;
+      margin-top: 20px;
+    }
+    #pagination button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 4px;
+      border: none;
+    }
 
+    #update-button-container {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      text-align: left;
+      z-index: 1;
+    }
+
+    #update-button-container a {
+      display: inline-block;
+      padding: 10px 20px;
+      font-size: 16px;
+      color: #fff;
+      background-color: #007BFF;
+      border: none;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+
+    #update-button-container a:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="search-container">
+    <input type="text" id="searchInput" placeholder="Search Channels / Movies / Shows">
+    <div id="results"></div>
+    <div id="pagination">
+      <button id="prevPage" disabled>Previous</button>
+      <button id="nextPage" disabled>Next</button>
+      <button id="resetBtn">Reset</button>
+      <button id="closeBtn">Close</button>
+    </div>
+  </div>
+
+  <div id="update-button-container">
+    <a href="convert.php">Update List</a>
+  </div>
+
+  <script>
+    const JSON_URL = 'playlist.json';
+    const ITEMS_PER_PAGE = 25;
+
+    let playlist = [], currentPage = 0, currentResults = [];
+
+    async function loadJSON() {
+      try {
+        const r = await fetch(`${JSON_URL}?v=${Date.now()}`, { cache: 'no-store' });
+        const data = await r.json();
+        // ✅ Omit entries starting with 1–5 '#' symbols
+        playlist = data
+          .map((item, index) => ({ ...item, playlistIndex: index }))
+          .filter(item => !/^(#{1,5})/.test(item.name.trim()));
+      } catch {
+        document.getElementById('results').innerHTML = '<div style="color:red;">Failed to load playlist.json.</div>';
+      }
+    }
+
+    function updatePaginationButtons() {
+      const totalPages = Math.ceil(currentResults.length / ITEMS_PER_PAGE);
+      document.getElementById('prevPage').disabled = currentPage === 0;
+      document.getElementById('nextPage').disabled = currentPage >= totalPages - 1;
+    }
+
+    function downloadResult(playlistIndex, name) {
+      const a = document.createElement('a');
+      a.href = `download.php?i=${encodeURIComponent(playlistIndex)}&name=${encodeURIComponent(name)}`;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function displayResults() {
+      const out = document.getElementById('results');
+      out.innerHTML = '';
+      const start = currentPage * ITEMS_PER_PAGE;
+      currentResults.slice(start, start + ITEMS_PER_PAGE).forEach(({name, flag, badge, playlistIndex}) => {
+        const div = document.createElement('div');
+        div.className = 'result';
+        div.innerHTML = `
+          ${badge ? `<img src="${badge}" alt="badge" class="badge">` : ''}
+          ${flag ? `<img src="${flag}" alt="flag" class="flag">` : ''}
+          <span class="channel-name">${name}</span>
+        `;
+        div.addEventListener('click', () => downloadResult(playlistIndex, name));
+        out.appendChild(div);
+      });
+      updatePaginationButtons();
+      out.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function search(q) {
+      currentPage = 0;
+      if (!q.trim()) {
+        currentResults = [];
+        document.getElementById('results').innerHTML = '';
+        updatePaginationButtons();
+        return;
+      }
+      currentResults = playlist.filter(i => 
+        i.name.toLowerCase().includes(q.toLowerCase()) &&
+        !/^(#{1,5})/.test(i.name.trim()) // Extra safety check
+      );
+      if (currentResults.length === 0) {
+        document.getElementById('results').innerHTML = '<div>No results found.</div>';
+        updatePaginationButtons();
+        return;
+      }
+      displayResults();
+    }
+
+    document.getElementById('searchInput').addEventListener('input', e => search(e.target.value));
+    document.getElementById('prevPage').addEventListener('click', () => {
+      if (currentPage > 0) { currentPage--; displayResults(); }
+    });
+    document.getElementById('nextPage').addEventListener('click', () => {
+      if (currentPage < Math.ceil(currentResults.length / ITEMS_PER_PAGE) - 1) {
+        currentPage++; displayResults();
+      }
+    });
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      document.getElementById('searchInput').value = '';
+      search('');
+    });
+    document.getElementById('closeBtn').addEventListener('click', () => {
+      window.location.href = '../index.html';
+    });
+
+    loadJSON();
+  </script>
+</body>
+</html>
